@@ -8,6 +8,8 @@ use Illuminate\Support\Str;
 
 class Grammar extends PostgresGrammar
 {
+    protected string $tablePrefix = '';
+    
     protected function compileFrom(Builder $query, $table)
     {
         if($this->isExpression($table)) {

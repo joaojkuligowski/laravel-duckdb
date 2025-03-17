@@ -183,7 +183,7 @@ class LaravelDuckdbConnection extends PostgresConnection
 
     public function getDefaultQueryGrammar()
     {
-        return return new QueryGrammar($this);
+        return new QueryGrammar($this);
     }
 
     public function useDefaultPostProcessor()

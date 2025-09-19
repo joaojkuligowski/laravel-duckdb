@@ -11,6 +11,7 @@ class LaravelDuckdbServiceProvider extends ServiceProvider
     {
         $defaultConfig = [
             'cli_path' => base_path('vendor/bin/duckdb'),
+            'connection_method' => 'ext',
             'cli_timeout' => 60,
             'dbfile' => storage_path('app/duckdb/duck_main.db'),
             //'database' => 'duck_main' //default to filename of dbfile, in most case no need to specify manually

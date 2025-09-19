@@ -39,9 +39,11 @@ class ConnectDuckdbCliCommand extends Command
         return [SIGINT, SIGTERM];
     }
 
-    public function handleSignal(int $signal): void
+    public function handleSignal(int $signal, int|false $previousExitCode = 0): int|false
     {
         $this->info('stopping...');
         $this->process->signal($signal);
+
+        return $previousExitCode;
     }
 }

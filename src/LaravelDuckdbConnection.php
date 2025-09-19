@@ -19,6 +19,11 @@ class LaravelDuckdbConnection extends PostgresConnection
     private $installed_extensions = [];
     public function __construct($config)
     {
+        /**
+         * @var string
+         * cli | extension
+         */
+        $this->config['connection_method'] = $this->config['connection_method'] ?? 'ext';
         $this->database = $config['database'];
         $this->config = $config;
         $this->config['dbfile'] = $config['dbfile'];
@@ -110,7 +115,7 @@ class LaravelDuckdbConnection extends PostgresConnection
     }
 
     private function ensureDuckCliExists(){
-        if(!file_exists($this->config['cli_path'])){
+        if(!file_exists($this->config['cli_path']) && $this->config['connection_method'] == 'cli'){
             throw new FileNotFoundException("DuckDB CLI Not Found. Make sure DuckDB CLI exists and provide valid `cli_path`. Download CLI From https://duckdb.org/docs/installation/index or run `artisan laravel-duckdb:download-cli`");
         }
     }
@@ -126,23 +131,55 @@ class LaravelDuckdbConnection extends PostgresConnection
     private function executeDuckCliSql($sql, $bindings = [], $safeMode=false){
 
         $command = $this->getDuckDBCommand($sql, $bindings, $safeMode);
-        $process = new Process($command);
-        $process->setTimeout($this->config['cli_timeout']);
-        $process->setIdleTimeout(0);
-        $process->run();
+        
+        if (!$this->config['connection_method'] == 'cli') {
+            $process = new Process($command);
+            $process->setTimeout($this->config['cli_timeout']);
+            $process->setIdleTimeout(0);
+            $process->run();
 
-        if (!$process->isSuccessful()) {
-            $err = $process->getErrorOutput();
-            if(str_starts_with($err, 'Error:')){
-                $finalErr = trim(substr_replace($err, '', 0, strlen('Error:')));
-                throw new QueryException($this->getName(), $sql, $bindings, new \Exception($finalErr));
+            if (!$process->isSuccessful()) {
+                $err = $process->getErrorOutput();
+                if(str_starts_with($err, 'Error:')){
+                    $finalErr = trim(substr_replace($err, '', 0, strlen('Error:')));
+                    throw new QueryException($this->getName(), $sql, $bindings, new \Exception($finalErr));
+                }
+
+                throw new ProcessFailedException($process);
             }
 
-            throw new ProcessFailedException($process);
+            $raw_output = trim($process->getOutput());
+            return json_decode($raw_output, true)??[];
         }
 
-        $raw_output = trim($process->getOutput());
-        return json_decode($raw_output, true)??[];
+        if ($this->config['connection_method'] == 'ext') {
+            $extRequirement = 'duckdb';
+            if(!extension_loaded($extRequirement)){
+                throw new \Exception("PHP extension `{$extRequirement}` is not loaded! Check in: https://github.com/fnvoid64/php-duckdb");
+            }
+            
+            $db = new \Fnvoid\DuckDB\DuckDB($this->config['dbfile'], [
+                'threads' => 1,
+            ]);
+
+            $results = [];
+
+                try {
+                    $stmt = $db->prepare($sql);
+                    $result = $stmt->execute($bindings);
+                } catch (\Exception $e) {
+                    throw new QueryException($this->getName(), $sql, $bindings, $e);
+                }
+
+            foreach ($result->iterate() as $row) {
+                var_dump($row);
+                $results[] = $row;
+            }
+
+            return $results;
+
+        }
+        
     }
 
     private function runQueryWithLog($query, $bindings=[]){
@@ -163,6 +200,15 @@ class LaravelDuckdbConnection extends PostgresConnection
         $this->runQueryWithLog($query, $bindings);
 
         return true;
+    }
+
+    /**
+     * Summary of summarize
+     * @see https://duckdb.org/docs/sql/analyze
+     * @param mixed $table
+     */
+    public function summarize($table) {
+        return $this->runQueryWithLog("SUMMARIZE $table");
     }
 
     public function select($query, $bindings = [], $useReadPdo = true)
